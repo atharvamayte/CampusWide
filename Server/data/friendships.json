@@ -1,0 +1,84 @@
+{
+  "requests": [
+    {
+      "id": "cf01e374-4473-4e7a-ba49-9a43c5f24398",
+      "fromUserId": "cwAarav8F2K",
+      "toUserId": "cwPriya4M9Q",
+      "status": "cancelled",
+      "createdAt": "2026-11-08T06:38:09.235Z",
+      "updatedAt": "2026-11-08T06:38:34.980Z"
+    },
+    {
+      "id": "bf32768c-c917-4751-bea4-a0c0bba1d510",
+      "fromUserId": "cwAarav8F2K",
+      "toUserId": "cwPriya4M9Q",
+      "status": "cancelled",
+      "createdAt": "2026-11-08T06:38:35.770Z",
+      "updatedAt": "2026-11-08T06:38:40.548Z"
+    },
+    {
+      "id": "2cb2c05d-5122-49ba-a689-df2c5f92e682",
+      "fromUserId": "cwPriya4M9Q",
+      "toUserId": "cwAarav8F2K",
+      "status": "cancelled",
+      "createdAt": "2026-11-08T06:38:43.138Z",
+      "updatedAt": "2026-11-08T06:38:47.461Z"
+    },
+    {
+      "id": "3fa6d69e-0228-4e5e-9671-415d8352ce92",
+      "fromUserId": "cwPriya4M9Q",
+      "toUserId": "cwAarav8F2K",
+      "status": "removed",
+      "createdAt": "2026-11-08T06:38:47.893Z",
+      "updatedAt": "2026-11-08T10:06:53.656Z"
+    },
+    {
+      "id": "5c695703-5727-444b-9dd2-ee5fdbe909eb",
+      "fromUserId": "cwAarav8F2K",
+      "toUserId": "cwPriya4M9Q",
+      "status": "removed",
+      "createdAt": "2026-11-08T10:06:54.593Z",
+      "updatedAt": "2026-11-08T10:07:16.866Z"
+    },
+    {
+      "id": "deb563e8-4331-41c2-b33a-68dda873883c",
+      "fromUserId": "cwPriya4M9Q",
+      "toUserId": "cwAarav8F2K",
+      "status": "removed",
+      "createdAt": "2026-11-08T10:07:17.661Z",
+      "updatedAt": "2026-11-08T10:28:30.131Z"
+    },
+    {
+      "id": "31a55d92-5311-4683-a52a-828a44c0c3e6",
+      "fromUserId": "cwAarav8F2K",
+      "toUserId": "cwPriya4M9Q",
+      "status": "removed",
+      "createdAt": "2026-11-08T10:28:30.814Z",
+      "updatedAt": "2026-11-08T10:31:21.602Z"
+    },
+    {
+      "id": "022327f1-cb31-4e2f-9efb-84f607da8163",
+      "fromUserId": "cwAarav8F2K",
+      "toUserId": "cwPriya4M9Q",
+      "status": "declined",
+      "createdAt": "2026-11-08T10:31:30.745Z",
+      "updatedAt": "2026-11-08T10:32:17.069Z"
+    },
+    {
+      "id": "8bed481c-2621-43a7-bef6-f2dbef9d9601",
+      "fromUserId": "cwPriya4M9Q",
+      "toUserId": "cwAarav8F2K",
+      "status": "accepted",
+      "createdAt": "2026-11-08T11:53:11.374Z",
+      "updatedAt": "2026-11-08T11:53:16.319Z"
+    },
+    {
+      "id": "2fab798e-670c-44ba-957b-feac9370d2ae",
+      "fromUserId": "cwAarav8F2K",
+      "toUserId": "cwDemoUser8A2",
+      "status": "cancelled",
+      "createdAt": "2026-11-08T13:43:58.894Z",
+      "updatedAt": "2026-11-08T13:44:01.744Z"
+    }
+  ]
+}
