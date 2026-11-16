@@ -31,6 +31,7 @@ import {
   type Friend,
   type FriendRequestsResponse
 } from "./services/friends";
+import JudgesHome from "./components/JudgesHome";
 
 const EMPTY_MESSAGES: DirectTextMessage[] = [];
 type CampusWideNavigationSnapshot = {
@@ -40,7 +41,7 @@ type CampusWideNavigationSnapshot = {
   messageOpen: boolean;
 };
 
-function App() {
+function CampusWideApp() {
   const [path, setPath] = useState<CampusNode[]>([]);
   const [selectedNode, setSelectedNode] = useState<CampusNode | null>(null);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
@@ -1781,6 +1782,16 @@ onMessageSent={(message) =>
 
     </main>
   );
+}
+
+function App() {
+  const currentPath = window.location.pathname.replace(/\/+$/, "");
+
+  if (currentPath === "/judges") {
+    return <JudgesHome />;
+  }
+
+  return <CampusWideApp />;
 }
 
 export default App;
