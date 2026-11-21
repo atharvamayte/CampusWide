@@ -34,8 +34,6 @@ const clubNames: Record<string, string> = {
   "green-club": "Green Club"
 };
 
-// The existing App.tsx uses the Nexconn chat ID
-// returned by connectNexconn() when calling getStudents().
 const DIRECTORY_READER_USER_ID = "cwAarav8F2K";
 
 function JudgesHome() {
@@ -76,16 +74,16 @@ function JudgesHome() {
     };
   }, []);
 
-const openDemo = (loginKey: string) => {
-  const demoUrl = new URL("/app", window.location.origin);
-  demoUrl.searchParams.set("user", loginKey);
+  const openDemo = (loginKey: string) => {
+    const demoUrl = new URL("/app", window.location.origin);
+    demoUrl.searchParams.set("user", loginKey);
 
-  window.open(
-    demoUrl.toString(),
-    "_blank",
-    "noopener,noreferrer"
-  );
-};
+    window.open(
+      demoUrl.toString(),
+      "_blank",
+      "noopener,noreferrer"
+    );
+  };
 
   return (
     <main className="judges-home">
@@ -113,15 +111,50 @@ const openDemo = (loginKey: string) => {
           </h1>
 
           <p>
-  This dedicated demo page has been created for hackathon
-  judges to explore CampusWide through 20 preconfigured
-  student accounts. Choose different profiles, experience
-  the application from their perspectives, and try out
-  the available features. Each account opens in a separate
-  browser tab, allowing you to explore multiple users
-  simultaneously.
-</p>
+            This dedicated demo portal allows hackathon judges
+            to explore CampusWide through 20 preconfigured student
+            accounts. Choose different profiles, experience the
+            application from their perspectives, and explore its
+            features. Each account opens in a separate browser tab,
+            allowing you to explore multiple users simultaneously.
+          </p>
         </div>
+
+        <section className="judges-persistence-notice">
+          <div className="judges-notice-heading">
+            <span className="judges-notice-icon">ⓘ</span>
+
+            <div>
+              <p className="eyebrow">PLEASE NOTE</p>
+              <h2>Explore freely. Your activity stays.</h2>
+            </div>
+
+            <span className="judges-notice-badge">
+              PERSISTENT DEMO
+            </span>
+          </div>
+
+          <p>
+            CampusWide is intentionally designed as an open,
+            persistent demonstration environment. Messages,
+            conversations and friend requests created during
+            your interaction are <strong>not automatically deleted</strong>.
+          </p>
+
+          <p>
+            Feel free to connect with other demo accounts, send
+            friend requests, exchange messages and explore the
+            platform's social features.
+          </p>
+
+          <div className="judges-notice-footer">
+            <span>POWERED BY NEXCONN</span>
+            <span>
+              Demonstrating chat-history persistence and
+              conversation retrieval.
+            </span>
+          </div>
+        </section>
 
         <div className="judges-section-heading">
           <div>
