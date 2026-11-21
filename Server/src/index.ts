@@ -18,7 +18,17 @@ const PORT = Number(process.env.PORT || 3000);
 // =======================================
 
 app.use(cors({
-  origin: /^http:\/\/localhost:\d+$/,
+  origin: (origin, callback) => {
+    if (
+      !origin ||
+      /^http:\/\/localhost:\d+$/.test(origin) ||
+      origin === process.env.CLIENT_ORIGIN
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   methods: ["GET", "POST", "DELETE"],
   allowedHeaders: [
     "Content-Type",
