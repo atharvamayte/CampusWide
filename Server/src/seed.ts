@@ -416,9 +416,25 @@ const saveSeedMarker = db.prepare(`
   INSERT OR IGNORE INTO app_meta (key, value)
   VALUES (?, ?)
 `);
+const resetFriendshipsOnce = db.prepare(`
+  DELETE FROM friend_requests
+`);
 
+const friendshipResetMarker = "demo_friendships_reset_v1";
 try {
   db.exec("BEGIN IMMEDIATE");
+
+  // Reset old demo friendships and requests exactly once.
+  const friendshipsReset = getSeedMarker.get(
+    friendshipResetMarker,
+  ) as { value: string } | undefined;
+
+  if (!friendshipsReset) {
+    resetFriendshipsOnce.run();
+    saveSeedMarker.run(friendshipResetMarker, "true");
+
+    console.log("[Seed] Existing friendships and requests cleared.");
+  }
 
   for (const student of students) {
     insertStudent.run(

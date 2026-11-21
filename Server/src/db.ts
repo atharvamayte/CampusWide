@@ -177,6 +177,112 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_one_club_admin_record
     ON club_admins(student_id, club_id)
     WHERE club_id IS NOT NULL;
+
+      -- Independent passwordless demo sessions for judges.
+  CREATE TABLE IF NOT EXISTS demo_sessions (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    nexconn_user_id TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  -- Friendships and requests between demo sessions.
+  -- These are kept separate from real seeded student friendships.
+  CREATE TABLE IF NOT EXISTS demo_friend_requests (
+    id TEXT PRIMARY KEY,
+    sender_session_id TEXT NOT NULL,
+    recipient_session_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+      CHECK (
+        status IN ('pending', 'accepted', 'declined', 'cancelled')
+      ),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CHECK (sender_session_id != recipient_session_id),
+
+    FOREIGN KEY (sender_session_id)
+      REFERENCES demo_sessions(id) ON DELETE CASCADE,
+
+    FOREIGN KEY (recipient_session_id)
+      REFERENCES demo_sessions(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_demo_friend_requests_recipient
+    ON demo_friend_requests(recipient_session_id, status);
+
+  CREATE INDEX IF NOT EXISTS idx_demo_friend_requests_sender
+    ON demo_friend_requests(sender_session_id, status);
+
+      -- Judge friendships and requests involving either judges or students.
+  -- Seeded student friendships remain in the original friend_requests table.
+  CREATE TABLE IF NOT EXISTS demo_friend_connections (
+    id TEXT PRIMARY KEY,
+
+    sender_session_id TEXT,
+    sender_student_id TEXT,
+
+    recipient_session_id TEXT,
+    recipient_student_id TEXT,
+
+    status TEXT NOT NULL DEFAULT 'pending'
+      CHECK (
+        status IN ('pending', 'accepted', 'declined', 'cancelled')
+      ),
+
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CHECK (
+      (sender_session_id IS NOT NULL AND sender_student_id IS NULL)
+      OR
+      (sender_session_id IS NULL AND sender_student_id IS NOT NULL)
+    ),
+
+    CHECK (
+      (recipient_session_id IS NOT NULL AND recipient_student_id IS NULL)
+      OR
+      (recipient_session_id IS NULL AND recipient_student_id IS NOT NULL)
+    ),
+
+    CHECK (
+      sender_session_id IS NULL
+      OR recipient_session_id IS NULL
+      OR sender_session_id != recipient_session_id
+    ),
+
+    CHECK (
+      sender_student_id IS NULL
+      OR recipient_student_id IS NULL
+      OR sender_student_id != recipient_student_id
+    ),
+
+    FOREIGN KEY (sender_session_id)
+      REFERENCES demo_sessions(id) ON DELETE CASCADE,
+
+    FOREIGN KEY (recipient_session_id)
+      REFERENCES demo_sessions(id) ON DELETE CASCADE,
+
+    FOREIGN KEY (sender_student_id)
+      REFERENCES students(id) ON DELETE CASCADE,
+
+    FOREIGN KEY (recipient_student_id)
+      REFERENCES students(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_demo_connections_sender
+    ON demo_friend_connections(
+      sender_session_id,
+      sender_student_id,
+      status
+    );
+
+  CREATE INDEX IF NOT EXISTS idx_demo_connections_recipient
+    ON demo_friend_connections(
+      recipient_session_id,
+      recipient_student_id,
+      status
+    );
 `);
 
 console.log(`[Database] Connected: ${DATABASE_PATH}`);

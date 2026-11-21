@@ -3,28 +3,6 @@ import { useEffect, useState } from "react";
 import type { Member } from "../data/members";
 import { getStudents } from "../services/students";
 
-type DemoAccount = {
-  number: number;
-  studentId: string;
-  loginKey: string;
-  accent: string;
-};
-
-const demoAccounts: DemoAccount[] = Array.from(
-  { length: 20 },
-  (_, index) => {
-    const number = index + 1;
-    const studentId = `student-${String(number).padStart(3, "0")}`;
-
-    return {
-      number,
-      studentId,
-      loginKey: number === 4 ? "demo-user" : studentId,
-      accent: ["blue", "green", "orange", "purple"][index % 4]
-    };
-  }
-);
-
 const clubNames: Record<string, string> = {
   ncc: "NCC",
   nss: "NSS",
@@ -34,14 +12,14 @@ const clubNames: Record<string, string> = {
   "green-club": "Green Club"
 };
 
-// The existing App.tsx uses the Nexconn chat ID
-// returned by connectNexconn() when calling getStudents().
+// Existing seeded account used only to load the public demo directory.
 const DIRECTORY_READER_USER_ID = "cwAarav8F2K";
 
 function JudgesHome() {
   const [students, setStudents] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [username, setUsername] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -76,16 +54,27 @@ function JudgesHome() {
     };
   }, []);
 
-const openDemo = (loginKey: string) => {
-  const demoUrl = new URL("/app", window.location.origin);
-  demoUrl.searchParams.set("user", loginKey);
+  const openDemo = () => {
+    const cleanUsername = username.trim();
 
-  window.open(
-    demoUrl.toString(),
-    "_blank",
-    "noopener,noreferrer"
-  );
-};
+    if (!/^[a-zA-Z0-9_-]{2,24}$/.test(cleanUsername)) {
+      setError(
+        "Use 2–24 characters: letters, numbers, underscores or hyphens."
+      );
+      return;
+    }
+
+    const demoUrl = new URL("/app", window.location.origin);
+    demoUrl.searchParams.set("judge", cleanUsername);
+
+    window.open(
+      demoUrl.toString(),
+      "_blank",
+      "noopener,noreferrer"
+    );
+
+    setError("");
+  };
 
   return (
     <main className="judges-home">
@@ -113,30 +102,78 @@ const openDemo = (loginKey: string) => {
           </h1>
 
           <p>
-  This dedicated demo page has been created for hackathon
-  judges to explore CampusWide through 20 preconfigured
-  student accounts. Choose different profiles, experience
-  the application from their perspectives, and try out
-  the available features. Each account opens in a separate
-  browser tab, allowing you to explore multiple users
-  simultaneously.
-</p>
+            Explore CampusWide through a dedicated demo session.
+            Choose a username to start your own isolated experience.
+            Your chats, friendships and interactions will belong
+            to that session, separate from the preconfigured
+            student accounts.
+          </p>
         </div>
 
         <div className="judges-section-heading">
           <div>
             <p className="eyebrow">JUDGE ACCESS PORTAL</p>
-            <h2>Choose your demo profile</h2>
+            <h2>Start your demo session</h2>
           </div>
 
-          <span>20 ACCOUNTS</span>
+          <span>NO PASSWORD REQUIRED</span>
+        </div>
+
+        <div className="judges-session-panel">
+          <label htmlFor="judge-username">
+            Choose a username
+          </label>
+
+          <input
+            id="judge-username"
+            type="text"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") openDemo();
+            }}
+            placeholder="e.g. JudgeAlpha"
+            maxLength={24}
+            autoComplete="off"
+          />
+
+          <p>
+            Use the same username to resume your demo session
+            in this browser. Anyone who knows the username may
+            be able to access that session, so don't use a
+            personal password or private information.
+          </p>
+
+          {error && (
+            <div className="judges-state judges-error">
+              {error}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={openDemo}
+            disabled={!username.trim()}
+          >
+            Start Demo Session
+            <span>↗</span>
+          </button>
+        </div>
+
+        <div className="judges-section-heading">
+          <div>
+            <p className="eyebrow">STUDENT DIRECTORY</p>
+            <h2>Explore the campus community</h2>
+          </div>
+
+          <span>20 STUDENTS</span>
         </div>
 
         {loading ? (
           <div className="judges-state">
             Loading student profiles...
           </div>
-        ) : error ? (
+        ) : error && students.length === 0 ? (
           <div className="judges-state judges-error">
             <strong>Couldn't load student information.</strong>
             <p>{error}</p>
@@ -150,101 +187,75 @@ const openDemo = (loginKey: string) => {
           </div>
         ) : (
           <div className="judges-account-grid">
-            {demoAccounts.map((account) => {
-              const student = students.find(
-                (item) => item.id === account.studentId
-              );
-
-              const clubs = student?.clubs ?? [];
+            {students.map((student, index) => {
+              const clubs = student.clubs ?? [];
+              const accent = ["blue", "green", "orange", "purple"][
+                index % 4
+              ];
 
               return (
-                <button
-                  key={account.studentId}
-                  type="button"
-                  className={`judges-account-card judges-${account.accent}`}
-                  onClick={() => openDemo(account.loginKey)}
+                <div
+                  key={student.id}
+                  className={`judges-account-card judges-${accent}`}
                 >
                   <div className="judges-card-top">
                     <div className="judges-avatar">
-                      {account.number}
+                      {index + 1}
                     </div>
 
                     <span className="judges-account-number">
-                      DEMO ACCOUNT{" "}
-                      {String(account.number).padStart(2, "0")}
+                      STUDENT {String(index + 1).padStart(2, "0")}
                     </span>
                   </div>
 
                   <div className="judges-account-details">
-                    <h3>User {account.number}</h3>
+                    <h3>{student.name}</h3>
 
-                    {student ? (
-                      <>
-                        <div className="judges-academic-details">
-                          <div>
-                            <span>YEAR</span>
-                            <strong>{student.year}</strong>
-                          </div>
+                    <div className="judges-academic-details">
+                      <div>
+                        <span>YEAR</span>
+                        <strong>{student.year}</strong>
+                      </div>
 
-                          <div>
-                            <span>BRANCH</span>
-                            <strong>{student.branch}</strong>
-                          </div>
+                      <div>
+                        <span>BRANCH</span>
+                        <strong>{student.branch}</strong>
+                      </div>
 
-                          <div>
-                            <span>DIVISION</span>
-                            <strong>{student.division}</strong>
-                          </div>
-                        </div>
+                      <div>
+                        <span>DIVISION</span>
+                        <strong>{student.division}</strong>
+                      </div>
+                    </div>
 
-                        <div className="judges-clubs-section">
-                          <span className="judges-detail-label">
-                            CLUB MEMBERSHIPS
+                    <div className="judges-clubs-section">
+                      <span className="judges-detail-label">
+                        CLUB MEMBERSHIPS
+                      </span>
+
+                      <div className="judges-club-list">
+                        {clubs.length > 0 ? (
+                          clubs.map((clubId) => (
+                            <span
+                              className="judges-club-tag"
+                              key={clubId}
+                            >
+                              {clubNames[clubId] ?? clubId}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="judges-no-clubs">
+                            No active memberships
                           </span>
-
-                          <div className="judges-club-list">
-                            {clubs.length > 0 ? (
-                              clubs.map((clubId) => (
-                                <span
-                                  className="judges-club-tag"
-                                  key={clubId}
-                                >
-                                  {clubNames[clubId] ?? clubId}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="judges-no-clubs">
-                                No active memberships
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <p className="judges-missing-profile">
-                        Student information unavailable
-                      </p>
-                    )}
+                        )}
+                      </div>
+                    </div>
                   </div>
-
-                  <div className="judges-launch">
-                    Launch experience
-                    <span>↗</span>
-                  </div>
-                </button>
+                </div>
               );
             })}
           </div>
         )}
-
-        <div className="judges-instructions">
-          <span>↗</span>
-          <p>
-            Each profile opens in a separate browser tab.
-            You can explore multiple student perspectives
-            simultaneously.
-          </p>
-        </div>
       </section>
 
       <footer className="judges-footer">
