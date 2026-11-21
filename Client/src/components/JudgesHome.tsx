@@ -76,16 +76,16 @@ function JudgesHome() {
     };
   }, []);
 
-  const openDemo = (loginKey: string) => {
-    const demoUrl = new URL("/", window.location.origin);
-    demoUrl.searchParams.set("user", loginKey);
+const openDemo = (loginKey: string) => {
+  const demoUrl = new URL("/app", window.location.origin);
+  demoUrl.searchParams.set("user", loginKey);
 
-    window.open(
-      demoUrl.toString(),
-      "_blank",
-      "noopener,noreferrer"
-    );
-  };
+  window.open(
+    demoUrl.toString(),
+    "_blank",
+    "noopener,noreferrer"
+  );
+};
 
   return (
     <main className="judges-home">

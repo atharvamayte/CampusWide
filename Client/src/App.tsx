@@ -1785,13 +1785,18 @@ onMessageSent={(message) =>
 }
 
 function App() {
-  const currentPath = window.location.pathname.replace(/\/+$/, "");
+  const currentPath =
+    window.location.pathname.replace(/\/+$/, "") || "/";
 
-  if (currentPath === "/judges") {
+  if (currentPath === "/" || currentPath === "/judges") {
     return <JudgesHome />;
   }
 
-  return <CampusWideApp />;
+  if (currentPath === "/app") {
+    return <CampusWideApp />;
+  }
+
+  return <JudgesHome />;
 }
 
 export default App;
