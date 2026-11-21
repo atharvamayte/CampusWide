@@ -133,31 +133,6 @@ function findStudentByLoginKey(
       AND s.is_active = 1
   `).get(loginKey) as StudentRow | undefined;
 }
-type DemoSessionRow = {
-  id: string;
-  username: string;
-  nexconn_user_id: string;
-  created_at: string;
-};
-
-function findDemoSessionByUsername(
-  username: string,
-): DemoSessionRow | undefined {
-  return db.prepare(`
-    SELECT *
-    FROM demo_sessions
-    WHERE username = ?
-  `).get(username) as DemoSessionRow | undefined;
-}
-function findDemoSessionByNexconnId(
-  nexconnUserId: string,
-): DemoSessionRow | undefined {
-  return db.prepare(`
-    SELECT *
-    FROM demo_sessions
-    WHERE nexconn_user_id = ?
-  `).get(nexconnUserId) as DemoSessionRow | undefined;
-}
 
 function toStudentProfile(student: StudentRow) {
   return {
@@ -195,66 +170,6 @@ function getCurrentDemoUser(
   }
 
   return student;
-}
-
-type CurrentIdentity =
-  | {
-      type: "student";
-      id: string;
-      nexconnUserId: string;
-      name: string;
-      student: StudentRow;
-    }
-  | {
-      type: "judge";
-      id: string;
-      nexconnUserId: string;
-      name: string;
-      session: DemoSessionRow;
-    };
-
-function getCurrentIdentity(
-  req: Request,
-  res: Response,
-): CurrentIdentity | null {
-  const nexconnUserId = req.header("x-campuswide-user-id");
-
-  if (!nexconnUserId) {
-    res.status(401).json({
-      error: "User identity is required.",
-    });
-    return null;
-  }
-
-  const student = findStudentByNexconnId(nexconnUserId);
-
-  if (student) {
-    return {
-      type: "student",
-      id: student.id,
-      nexconnUserId: student.nexconn_user_id,
-      name: student.display_name,
-      student,
-    };
-  }
-
-  const session = findDemoSessionByNexconnId(nexconnUserId);
-
-  if (session) {
-    return {
-      type: "judge",
-      id: session.id,
-      nexconnUserId: session.nexconn_user_id,
-      name: session.username,
-      session,
-    };
-  }
-
-  res.status(403).json({
-    error: "Unknown CampusWide demo user.",
-  });
-
-  return null;
 }
 
 function findClub(clubId: string): ClubRow | undefined {
@@ -402,95 +317,7 @@ function areAlreadyFriends(
 
   return Boolean(result);
 }
-type DemoConnectionViewRow = {
-  id: string;
-  status: FriendRequestStatus;
-  created_at: string;
-  updated_at: string;
-  from_user_id: string;
-  from_name: string;
-  to_user_id: string;
-  to_name: string;
-};
 
-const demoConnectionSelect = `
-  SELECT
-    dc.id,
-    dc.status,
-    dc.created_at,
-    dc.updated_at,
-
-    COALESCE(sender_student.nexconn_user_id,
-             sender_session.nexconn_user_id) AS from_user_id,
-
-    COALESCE(sender_student.display_name,
-             sender_session.username) AS from_name,
-
-    COALESCE(recipient_student.nexconn_user_id,
-             recipient_session.nexconn_user_id) AS to_user_id,
-
-    COALESCE(recipient_student.display_name,
-             recipient_session.username) AS to_name
-
-  FROM demo_friend_connections AS dc
-
-  LEFT JOIN students AS sender_student
-    ON sender_student.id = dc.sender_student_id
-
-  LEFT JOIN demo_sessions AS sender_session
-    ON sender_session.id = dc.sender_session_id
-
-  LEFT JOIN students AS recipient_student
-    ON recipient_student.id = dc.recipient_student_id
-
-  LEFT JOIN demo_sessions AS recipient_session
-    ON recipient_session.id = dc.recipient_session_id
-`;
-
-function getDemoConnectionView(
-  connectionId: string,
-): DemoConnectionViewRow | undefined {
-  return db.prepare(`
-    ${demoConnectionSelect}
-    WHERE dc.id = ?
-  `).get(connectionId) as DemoConnectionViewRow | undefined;
-}
-
-function presentDemoConnection(
-  connection: DemoConnectionViewRow,
-) {
-  return {
-    id: connection.id,
-    from: {
-      userId: connection.from_user_id,
-      name: connection.from_name,
-    },
-    to: {
-      userId: connection.to_user_id,
-      name: connection.to_name,
-    },
-    status: connection.status,
-    createdAt: connection.created_at,
-    updatedAt: connection.updated_at,
-  };
-}
-
-function getIdentitySideCondition(
-  identity: CurrentIdentity,
-  side: "sender" | "recipient",
-) {
-  if (identity.type === "judge") {
-    return {
-      sql: `dc.${side}_session_id = ?`,
-      value: identity.id,
-    };
-  }
-
-  return {
-    sql: `dc.${side}_student_id = ?`,
-    value: identity.id,
-  };
-}
 // =======================================
 // COMMUNITY HELPERS
 // =======================================
@@ -581,8 +408,8 @@ app.get("/api/health", (_req, res) => {
 // =======================================
 
 app.get("/api/students", (req, res) => {
-  const currentUser = getCurrentIdentity(req, res);
-if (!currentUser) return;
+  const currentUser = getCurrentDemoUser(req, res);
+  if (!currentUser) return;
 
   const rows = db.prepare(`
     SELECT
@@ -637,141 +464,6 @@ type NexconnResponse = {
     accessToken?: string;
   };
 };
-
-// =======================================
-// PASSWORDLESS JUDGE DEMO SESSIONS
-// =======================================
-
-app.post("/api/demo/session", async (req, res) => {
-  const rawUsername = req.body?.username;
-
-  if (typeof rawUsername !== "string") {
-    return res.status(400).json({
-      error: "A username is required.",
-    });
-  }
-
-  const username = rawUsername.trim();
-
-  if (!/^[a-zA-Z0-9_-]{2,24}$/.test(username)) {
-    return res.status(400).json({
-      error:
-        "Username must be 2–24 characters and contain only letters, numbers, underscores or hyphens.",
-    });
-  }
-
-  let session = findDemoSessionByUsername(username);
-  let isNew = false;
-
-  if (!session) {
-    const sessionId = randomUUID();
-    const nexconnUserId = `cwJudge_${randomBytes(12).toString("hex")}`;
-
-    try {
-      db.prepare(`
-        INSERT OR IGNORE INTO demo_sessions (
-          id,
-          username,
-          nexconn_user_id
-        )
-        VALUES (?, ?, ?)
-      `).run(
-        sessionId,
-        username,
-        nexconnUserId,
-      );
-
-      // Re-fetch to handle two judges creating the same
-      // username simultaneously.
-      session = findDemoSessionByUsername(username);
-
-      if (!session) {
-        return res.status(500).json({
-          error: "Could not create demo session.",
-        });
-      }
-
-      isNew = session.id === sessionId;
-    } catch (error) {
-      console.error("[Demo Session] Creation failed:", error);
-
-      return res.status(500).json({
-        error: "Could not create demo session.",
-      });
-    }
-  }
-
-  const appKey = process.env.NEXCONN_APP_KEY;
-  const appSecret = process.env.NEXCONN_APP_SECRET;
-  const apiBaseUrl = process.env.NEXCONN_API_BASE_URL;
-
-  if (!appKey || !appSecret || !apiBaseUrl) {
-    return res.status(500).json({
-      error: "Nexconn server configuration is incomplete.",
-    });
-  }
-
-  const nonce = randomBytes(9).toString("hex");
-  const timestamp = Date.now().toString();
-
-  const signature = createHash("sha1")
-    .update(`${appSecret}${nonce}${timestamp}`)
-    .digest("hex");
-
-  try {
-    const response = await fetch(
-      `${apiBaseUrl.replace(/\/+$/, "")}/v4/auth/access-token/issue`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "App-Key": appKey,
-          "Nonce": nonce,
-          "Timestamp": timestamp,
-          "Signature": signature,
-          "X-Request-ID": randomUUID(),
-        },
-        body: JSON.stringify({
-          userId: session.nexconn_user_id,
-          name: session.username,
-        }),
-      },
-    );
-
-    const data = await response.json() as NexconnResponse;
-
-    if (
-      !response.ok ||
-      data.code !== 0 ||
-      !data.result?.accessToken
-    ) {
-      console.error(
-        "[Demo Session] Nexconn token request failed:",
-        data.code,
-      );
-
-      return res.status(502).json({
-        error: "Nexconn could not issue a session token.",
-        nexconnCode: data.code ?? null,
-      });
-    }
-
-    return res.json({
-      sessionId: session.id,
-      username: session.username,
-      userId: data.result.userId || session.nexconn_user_id,
-      token: data.result.accessToken,
-      name: session.username,
-      isNew,
-    });
-  } catch (error) {
-    console.error("[Demo Session] Nexconn connection error:", error);
-
-    return res.status(502).json({
-      error: "Could not reach Nexconn.",
-    });
-  }
-});
 
 app.post("/api/chat/token", async (req, res) => {
   const demoUserId = req.body?.demoUserId;
@@ -864,81 +556,34 @@ app.post("/api/chat/token", async (req, res) => {
 // =======================================
 
 app.get("/api/friends", (req, res) => {
-  const currentUser = getCurrentIdentity(req, res);
+  const currentUser = getCurrentDemoUser(req, res);
   if (!currentUser) return;
 
-  const demoSide = getIdentitySideCondition(currentUser, "sender");
-  const demoRecipientSide = getIdentitySideCondition(
-    currentUser,
-    "recipient",
-  );
-
-  const demoFriends = db.prepare(`
-    ${demoConnectionSelect}
-    WHERE dc.status = 'accepted'
+  const friends = db.prepare(`
+    SELECT
+      friend.nexconn_user_id AS userId,
+      friend.display_name AS name,
+      fr.updated_at AS friendsSince
+    FROM friend_requests AS fr
+    JOIN students AS friend
+      ON friend.id = CASE
+        WHEN fr.sender_student_id = ?
+        THEN fr.recipient_student_id
+        ELSE fr.sender_student_id
+      END
+    WHERE fr.status = 'accepted'
       AND (
-        ${demoSide.sql}
-        OR ${demoRecipientSide.sql}
+        fr.sender_student_id = ?
+        OR fr.recipient_student_id = ?
       )
-    ORDER BY dc.updated_at DESC
+    ORDER BY friend.display_name
   `).all(
-    demoSide.value,
-    demoRecipientSide.value,
-  ) as DemoConnectionViewRow[];
-
-  const friends = demoFriends.map((connection) => {
-    const currentIsSender =
-      connection.from_user_id === currentUser.nexconnUserId;
-
-    return {
-      userId: currentIsSender
-        ? connection.to_user_id
-        : connection.from_user_id,
-      name: currentIsSender
-        ? connection.to_name
-        : connection.from_name,
-      friendsSince: connection.updated_at,
-    };
-  });
-
-  // Preserve the original student-to-student friendships.
-  if (currentUser.type === "student") {
-    const studentFriends = db.prepare(`
-      SELECT
-        friend.nexconn_user_id AS userId,
-        friend.display_name AS name,
-        fr.updated_at AS friendsSince
-      FROM friend_requests AS fr
-      JOIN students AS friend
-        ON friend.id = CASE
-          WHEN fr.sender_student_id = ?
-          THEN fr.recipient_student_id
-          ELSE fr.sender_student_id
-        END
-      WHERE fr.status = 'accepted'
-        AND (
-          fr.sender_student_id = ?
-          OR fr.recipient_student_id = ?
-        )
-      ORDER BY friend.display_name
-    `).all(
-      currentUser.id,
-      currentUser.id,
-      currentUser.id,
-    ) as {
-      userId: string;
-      name: string;
-      friendsSince: string;
-    }[];
-
-    friends.push(...studentFriends);
-  }
-
-  const uniqueFriends = Array.from(
-    new Map(friends.map((friend) => [friend.userId, friend])).values(),
+    currentUser.id,
+    currentUser.id,
+    currentUser.id,
   );
 
-  return res.json({ friends: uniqueFriends });
+  return res.json({ friends });
 });
 
 // =======================================
@@ -946,113 +591,62 @@ app.get("/api/friends", (req, res) => {
 // =======================================
 
 app.delete("/api/friends/:friendUserId", (req, res) => {
-  const currentUser = getCurrentIdentity(req, res);
+  const currentUser = getCurrentDemoUser(req, res);
   if (!currentUser) return;
 
   const friendUserId = String(req.params.friendUserId);
+  const friend = findStudentByNexconnId(friendUserId);
 
-  const friendStudent = findStudentByNexconnId(friendUserId);
-  const friendSession = findDemoSessionByNexconnId(friendUserId);
-
-  if (!friendStudent && !friendSession) {
+  if (!friend) {
     return res.status(404).json({
-      error: "User not found.",
+      error: "Student not found.",
     });
   }
 
-  if (
-    (currentUser.type === "student" &&
-      friendStudent?.id === currentUser.id) ||
-    (currentUser.type === "judge" &&
-      friendSession?.id === currentUser.id)
-  ) {
+  if (friend.id === currentUser.id) {
     return res.status(400).json({
       error: "You cannot remove yourself.",
     });
   }
 
-  const connection = db.prepare(`
-    ${demoConnectionSelect}
-    WHERE dc.status = 'accepted'
+  const friendship = db.prepare(`
+    SELECT id
+    FROM friend_requests
+    WHERE status = 'accepted'
       AND (
         (
-          dc.sender_session_id = ?
-          OR dc.sender_student_id = ?
+          sender_student_id = ?
+          AND recipient_student_id = ?
         )
         OR
         (
-          dc.recipient_session_id = ?
-          OR dc.recipient_student_id = ?
+          sender_student_id = ?
+          AND recipient_student_id = ?
         )
-      )
-      AND (
-        COALESCE(sender_student.nexconn_user_id,
-                 sender_session.nexconn_user_id) = ?
-        OR
-        COALESCE(recipient_student.nexconn_user_id,
-                 recipient_session.nexconn_user_id) = ?
       )
     LIMIT 1
   `).get(
-    currentUser.type === "judge" ? currentUser.id : null,
-    currentUser.type === "student" ? currentUser.id : null,
-    currentUser.type === "judge" ? currentUser.id : null,
-    currentUser.type === "student" ? currentUser.id : null,
-    friendUserId,
-    friendUserId,
-  ) as DemoConnectionViewRow | undefined;
+    currentUser.id,
+    friend.id,
+    friend.id,
+    currentUser.id,
+  ) as { id: string } | undefined;
 
-  if (connection) {
-    db.prepare(`
-      DELETE FROM demo_friend_connections
-      WHERE id = ?
-    `).run(connection.id);
-
-    return res.json({
-      message: "Friend removed successfully.",
+  if (!friendship) {
+    return res.status(404).json({
+      error: "Friendship not found.",
     });
   }
 
-  // Original student-to-student friendships.
-  if (currentUser.type === "student" && friendStudent) {
-    const friendship = db.prepare(`
-      SELECT id
-      FROM friend_requests
-      WHERE status = 'accepted'
-        AND (
-          (
-            sender_student_id = ?
-            AND recipient_student_id = ?
-          )
-          OR
-          (
-            sender_student_id = ?
-            AND recipient_student_id = ?
-          )
-        )
-      LIMIT 1
-    `).get(
-      currentUser.id,
-      friendStudent.id,
-      friendStudent.id,
-      currentUser.id,
-    ) as { id: string } | undefined;
+  db.prepare(`
+    UPDATE friend_requests
+    SET status = 'removed',
+        updated_at = ?
+    WHERE id = ?
+  `).run(new Date().toISOString(), friendship.id);
 
-    if (friendship) {
-      // Delete instead of setting "removed", which the DB rejects.
-      db.prepare(`
-        DELETE FROM friend_requests
-        WHERE id = ?
-      `).run(friendship.id);
-
-      return res.json({
-        message: "Friend removed successfully.",
-      });
-    }
-  }
-
-  return res.status(404).json({
-    error: "Friendship not found.",
+  return res.json({
+    message: "Friend removed successfully.",
   });
 });
 
@@ -1061,61 +655,26 @@ app.delete("/api/friends/:friendUserId", (req, res) => {
 // =======================================
 
 app.get("/api/friends/requests", (req, res) => {
-  const currentUser = getCurrentIdentity(req, res);
+  const currentUser = getCurrentDemoUser(req, res);
   if (!currentUser) return;
 
-  const recipientSide = getIdentitySideCondition(
-    currentUser,
-    "recipient",
-  );
+  const incomingRows = db.prepare(`
+    ${friendRequestSelect}
+    WHERE fr.status = 'pending'
+      AND fr.recipient_student_id = ?
+    ORDER BY fr.created_at DESC
+  `).all(currentUser.id) as FriendRequestViewRow[];
 
-  const senderSide = getIdentitySideCondition(
-    currentUser,
-    "sender",
-  );
-
-  const incomingDemo = db.prepare(`
-    ${demoConnectionSelect}
-    WHERE dc.status = 'pending'
-      AND ${recipientSide.sql}
-    ORDER BY dc.created_at DESC
-  `).all(recipientSide.value) as DemoConnectionViewRow[];
-
-  const outgoingDemo = db.prepare(`
-    ${demoConnectionSelect}
-    WHERE dc.status = 'pending'
-      AND ${senderSide.sql}
-    ORDER BY dc.created_at DESC
-  `).all(senderSide.value) as DemoConnectionViewRow[];
-
-  let incomingLegacy: FriendRequestViewRow[] = [];
-  let outgoingLegacy: FriendRequestViewRow[] = [];
-
-  if (currentUser.type === "student") {
-    incomingLegacy = db.prepare(`
-      ${friendRequestSelect}
-      WHERE fr.status = 'pending'
-        AND fr.recipient_student_id = ?
-      ORDER BY fr.created_at DESC
-    `).all(currentUser.id) as FriendRequestViewRow[];
-
-    outgoingLegacy = db.prepare(`
-      ${friendRequestSelect}
-      WHERE fr.status = 'pending'
-        AND fr.sender_student_id = ?
-      ORDER BY fr.created_at DESC
-    `).all(currentUser.id) as FriendRequestViewRow[];
-  }
+  const outgoingRows = db.prepare(`
+    ${friendRequestSelect}
+    WHERE fr.status = 'pending'
+      AND fr.sender_student_id = ?
+    ORDER BY fr.created_at DESC
+  `).all(currentUser.id) as FriendRequestViewRow[];
 
   return res.json({
-    incoming: [
-      ...incomingLegacy.map(presentRequest),
-      ...incomingDemo.map(presentDemoConnection),
-    ],
-    outgoing: [
-      ...outgoingLegacy.map(presentRequest),
-      ...outgoingDemo.map(presentDemoConnection),
-    ],
+    incoming: incomingRows.map(presentRequest),
+    outgoing: outgoingRows.map(presentRequest),
   });
 });
 
@@ -1124,7 +683,7 @@ app.get("/api/friends/requests", (req, res) => {
 // =======================================
 
 app.post("/api/friends/requests", (req, res) => {
-  const currentUser = getCurrentIdentity(req, res);
+  const currentUser = getCurrentDemoUser(req, res);
   if (!currentUser) return;
 
   const targetUserId = req.body?.targetUserId;
@@ -1135,161 +694,21 @@ app.post("/api/friends/requests", (req, res) => {
     });
   }
 
-  const targetStudent = findStudentByNexconnId(targetUserId);
-  const targetSession = findDemoSessionByNexconnId(targetUserId);
+  const targetUser = findStudentByNexconnId(targetUserId);
 
-  if (!targetStudent && !targetSession) {
+  if (!targetUser) {
     return res.status(404).json({
-      error: "User not found.",
+      error: "Student not found.",
     });
   }
 
-  if (
-    (currentUser.type === "student" &&
-      targetStudent?.id === currentUser.id) ||
-    (currentUser.type === "judge" &&
-      targetSession?.id === currentUser.id)
-  ) {
+  if (targetUser.id === currentUser.id) {
     return res.status(400).json({
       error: "You cannot send a friend request to yourself.",
     });
   }
 
-  // Keep ordinary student-to-student requests in the original table.
-  if (
-    currentUser.type === "student" &&
-    targetStudent
-  ) {
-    if (areAlreadyFriends(currentUser.id, targetStudent.id)) {
-      return res.status(409).json({
-        error: "You are already friends.",
-      });
-    }
-
-    const existingOutgoing = db.prepare(`
-      SELECT id
-      FROM friend_requests
-      WHERE sender_student_id = ?
-        AND recipient_student_id = ?
-        AND status = 'pending'
-      LIMIT 1
-    `).get(
-      currentUser.id,
-      targetStudent.id,
-    ) as { id: string } | undefined;
-
-    if (existingOutgoing) {
-      const request = getFriendRequestView(existingOutgoing.id);
-
-      return res.json({
-        message: "Friend request already sent.",
-        request: request ? presentRequest(request) : null,
-      });
-    }
-
-    const existingIncoming = db.prepare(`
-      SELECT id
-      FROM friend_requests
-      WHERE sender_student_id = ?
-        AND recipient_student_id = ?
-        AND status = 'pending'
-      LIMIT 1
-    `).get(
-      targetStudent.id,
-      currentUser.id,
-    ) as { id: string } | undefined;
-
-    if (existingIncoming) {
-      const now = new Date().toISOString();
-
-      db.prepare(`
-        UPDATE friend_requests
-        SET status = 'accepted',
-            updated_at = ?
-        WHERE id = ?
-          AND status = 'pending'
-      `).run(now, existingIncoming.id);
-
-      const request = getFriendRequestView(existingIncoming.id);
-
-      return res.json({
-        message: "You are now friends!",
-        automaticallyAccepted: true,
-        request: request ? presentRequest(request) : null,
-      });
-    }
-
-    const now = new Date().toISOString();
-    const requestId = randomUUID();
-
-    db.prepare(`
-      INSERT INTO friend_requests (
-        id,
-        sender_student_id,
-        recipient_student_id,
-        status,
-        created_at,
-        updated_at
-      )
-      VALUES (?, ?, ?, 'pending', ?, ?)
-    `).run(
-      requestId,
-      currentUser.id,
-      targetStudent.id,
-      now,
-      now,
-    );
-
-    const request = getFriendRequestView(requestId);
-
-    return res.status(201).json({
-      message: "Friend request sent.",
-      request: request ? presentRequest(request) : null,
-    });
-  }
-
-  // Any request involving a judge uses the isolated connections table.
-  const senderSessionId =
-    currentUser.type === "judge" ? currentUser.id : null;
-
-  const senderStudentId =
-    currentUser.type === "student" ? currentUser.id : null;
-
-  const recipientSessionId = targetSession?.id ?? null;
-  const recipientStudentId = targetStudent?.id ?? null;
-
-  const alreadyConnected = db.prepare(`
-    SELECT id
-    FROM demo_friend_connections
-    WHERE status = 'accepted'
-      AND (
-        (
-          sender_session_id IS ?
-          AND sender_student_id IS ?
-          AND recipient_session_id IS ?
-          AND recipient_student_id IS ?
-        )
-        OR
-        (
-          sender_session_id IS ?
-          AND sender_student_id IS ?
-          AND recipient_session_id IS ?
-          AND recipient_student_id IS ?
-        )
-      )
-    LIMIT 1
-  `).get(
-    senderSessionId,
-    senderStudentId,
-    recipientSessionId,
-    recipientStudentId,
-    recipientSessionId,
-    recipientStudentId,
-    senderSessionId,
-    senderStudentId,
-  );
-
-  if (alreadyConnected) {
+  if (areAlreadyFriends(currentUser.id, targetUser.id)) {
     return res.status(409).json({
       error: "You are already friends.",
     });
@@ -1297,62 +716,54 @@ app.post("/api/friends/requests", (req, res) => {
 
   const existingOutgoing = db.prepare(`
     SELECT id
-    FROM demo_friend_connections
-    WHERE sender_session_id IS ?
-      AND sender_student_id IS ?
-      AND recipient_session_id IS ?
-      AND recipient_student_id IS ?
+    FROM friend_requests
+    WHERE sender_student_id = ?
+      AND recipient_student_id = ?
       AND status = 'pending'
     LIMIT 1
   `).get(
-    senderSessionId,
-    senderStudentId,
-    recipientSessionId,
-    recipientStudentId,
+    currentUser.id,
+    targetUser.id,
   ) as { id: string } | undefined;
 
   if (existingOutgoing) {
-    const request = getDemoConnectionView(existingOutgoing.id);
+    const request = getFriendRequestView(existingOutgoing.id);
 
     return res.json({
       message: "Friend request already sent.",
-      request: request ? presentDemoConnection(request) : null,
+      request: request ? presentRequest(request) : null,
     });
   }
 
   const existingIncoming = db.prepare(`
     SELECT id
-    FROM demo_friend_connections
-    WHERE sender_session_id IS ?
-      AND sender_student_id IS ?
-      AND recipient_session_id IS ?
-      AND recipient_student_id IS ?
+    FROM friend_requests
+    WHERE sender_student_id = ?
+      AND recipient_student_id = ?
       AND status = 'pending'
     LIMIT 1
   `).get(
-    recipientSessionId,
-    recipientStudentId,
-    senderSessionId,
-    senderStudentId,
+    targetUser.id,
+    currentUser.id,
   ) as { id: string } | undefined;
 
   if (existingIncoming) {
     const now = new Date().toISOString();
 
     db.prepare(`
-      UPDATE demo_friend_connections
+      UPDATE friend_requests
       SET status = 'accepted',
           updated_at = ?
       WHERE id = ?
         AND status = 'pending'
     `).run(now, existingIncoming.id);
 
-    const request = getDemoConnectionView(existingIncoming.id);
+    const request = getFriendRequestView(existingIncoming.id);
 
     return res.json({
       message: "You are now friends!",
       automaticallyAccepted: true,
-      request: request ? presentDemoConnection(request) : null,
+      request: request ? presentRequest(request) : null,
     });
   }
 
@@ -1360,105 +771,41 @@ app.post("/api/friends/requests", (req, res) => {
   const requestId = randomUUID();
 
   db.prepare(`
-    INSERT INTO demo_friend_connections (
+    INSERT INTO friend_requests (
       id,
-      sender_session_id,
       sender_student_id,
-      recipient_session_id,
       recipient_student_id,
       status,
       created_at,
       updated_at
     )
-    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+    VALUES (?, ?, ?, 'pending', ?, ?)
   `).run(
     requestId,
-    senderSessionId,
-    senderStudentId,
-    recipientSessionId,
-    recipientStudentId,
+    currentUser.id,
+    targetUser.id,
     now,
     now,
   );
 
-  const request = getDemoConnectionView(requestId);
+  const request = getFriendRequestView(requestId);
 
   return res.status(201).json({
     message: "Friend request sent.",
-    request: request ? presentDemoConnection(request) : null,
+    request: request ? presentRequest(request) : null,
   });
 });
 
 // =======================================
-// ACCEPT / DECLINE FRIEND REQUEST
+// ACCEPT FRIEND REQUEST
 // =======================================
 
-function updateFriendRequest(
-  req: Request,
-  res: Response,
-  action: "accepted" | "declined",
-) {
-  const currentUser = getCurrentIdentity(req, res);
+app.post("/api/friends/requests/:requestId/accept", (req, res) => {
+  const currentUser = getCurrentDemoUser(req, res);
   if (!currentUser) return;
 
   const requestId = String(req.params.requestId);
-
-  const demoRequest = db.prepare(`
-    SELECT *
-    FROM demo_friend_connections
-    WHERE id = ?
-  `).get(requestId) as {
-    id: string;
-    recipient_session_id: string | null;
-    recipient_student_id: string | null;
-    status: FriendRequestStatus;
-  } | undefined;
-
-  if (demoRequest) {
-    const isRecipient =
-      currentUser.type === "judge"
-        ? demoRequest.recipient_session_id === currentUser.id
-        : demoRequest.recipient_student_id === currentUser.id;
-
-    if (!isRecipient) {
-      return res.status(403).json({
-        error: `You cannot ${action === "accepted" ? "accept" : "decline"} this request.`,
-      });
-    }
-
-    if (demoRequest.status !== "pending") {
-      return res.status(409).json({
-        error: "This request is no longer pending.",
-      });
-    }
-
-    db.prepare(`
-      UPDATE demo_friend_connections
-      SET status = ?,
-          updated_at = ?
-      WHERE id = ?
-    `).run(action, new Date().toISOString(), requestId);
-
-    const updatedRequest = getDemoConnectionView(requestId);
-
-    return res.json({
-      message: action === "accepted"
-        ? "Friend request accepted."
-        : "Friend request declined.",
-      request: updatedRequest
-        ? presentDemoConnection(updatedRequest)
-        : null,
-    });
-  }
-
-  // Original student-to-student request handling.
-  if (currentUser.type !== "student") {
-    return res.status(404).json({
-      error: "Friend request not found.",
-    });
-  }
-
-  const legacyRequest = db.prepare(`
+  const request = db.prepare(`
     SELECT *
     FROM friend_requests
     WHERE id = ?
@@ -1468,19 +815,19 @@ function updateFriendRequest(
     status: FriendRequestStatus;
   } | undefined;
 
-  if (!legacyRequest) {
+  if (!request) {
     return res.status(404).json({
       error: "Friend request not found.",
     });
   }
 
-  if (legacyRequest.recipient_student_id !== currentUser.id) {
+  if (request.recipient_student_id !== currentUser.id) {
     return res.status(403).json({
-      error: "You cannot respond to this request.",
+      error: "You cannot accept this request.",
     });
   }
 
-  if (legacyRequest.status !== "pending") {
+  if (request.status !== "pending") {
     return res.status(409).json({
       error: "This request is no longer pending.",
     });
@@ -1488,29 +835,68 @@ function updateFriendRequest(
 
   db.prepare(`
     UPDATE friend_requests
-    SET status = ?,
+    SET status = 'accepted',
         updated_at = ?
     WHERE id = ?
-  `).run(action, new Date().toISOString(), requestId);
+  `).run(new Date().toISOString(), requestId);
 
   const updatedRequest = getFriendRequestView(requestId);
 
   return res.json({
-    message: action === "accepted"
-      ? "Friend request accepted."
-      : "Friend request declined.",
+    message: "Friend request accepted.",
     request: updatedRequest
       ? presentRequest(updatedRequest)
       : null,
   });
-}
-
-app.post("/api/friends/requests/:requestId/accept", (req, res) => {
-  return updateFriendRequest(req, res, "accepted");
 });
 
+// =======================================
+// DECLINE FRIEND REQUEST
+// =======================================
+
 app.post("/api/friends/requests/:requestId/decline", (req, res) => {
-  return updateFriendRequest(req, res, "declined");
+  const currentUser = getCurrentDemoUser(req, res);
+  if (!currentUser) return;
+
+  const requestId = String(req.params.requestId);
+  const request = db.prepare(`
+    SELECT *
+    FROM friend_requests
+    WHERE id = ?
+  `).get(requestId) as {
+    id: string;
+    recipient_student_id: string;
+    status: FriendRequestStatus;
+  } | undefined;
+
+  if (!request) {
+    return res.status(404).json({
+      error: "Friend request not found.",
+    });
+  }
+
+  if (request.recipient_student_id !== currentUser.id) {
+    return res.status(403).json({
+      error: "You cannot decline this request.",
+    });
+  }
+
+  if (request.status !== "pending") {
+    return res.status(409).json({
+      error: "This request is no longer pending.",
+    });
+  }
+
+  db.prepare(`
+    UPDATE friend_requests
+    SET status = 'declined',
+        updated_at = ?
+    WHERE id = ?
+  `).run(new Date().toISOString(), requestId);
+
+  return res.json({
+    message: "Friend request declined.",
+  });
 });
 
 // =======================================
@@ -1518,59 +904,11 @@ app.post("/api/friends/requests/:requestId/decline", (req, res) => {
 // =======================================
 
 app.delete("/api/friends/requests/:requestId", (req, res) => {
-  const currentUser = getCurrentIdentity(req, res);
+  const currentUser = getCurrentDemoUser(req, res);
   if (!currentUser) return;
 
   const requestId = String(req.params.requestId);
-
-  const demoRequest = db.prepare(`
-    SELECT *
-    FROM demo_friend_connections
-    WHERE id = ?
-  `).get(requestId) as {
-    id: string;
-    sender_session_id: string | null;
-    sender_student_id: string | null;
-    status: FriendRequestStatus;
-  } | undefined;
-
-  if (demoRequest) {
-    const isSender =
-      currentUser.type === "judge"
-        ? demoRequest.sender_session_id === currentUser.id
-        : demoRequest.sender_student_id === currentUser.id;
-
-    if (!isSender) {
-      return res.status(403).json({
-        error: "You cannot cancel this request.",
-      });
-    }
-
-    if (demoRequest.status !== "pending") {
-      return res.status(409).json({
-        error: "This request is no longer pending.",
-      });
-    }
-
-    db.prepare(`
-      UPDATE demo_friend_connections
-      SET status = 'cancelled',
-          updated_at = ?
-      WHERE id = ?
-    `).run(new Date().toISOString(), requestId);
-
-    return res.json({
-      message: "Friend request cancelled.",
-    });
-  }
-
-  if (currentUser.type !== "student") {
-    return res.status(404).json({
-      error: "Friend request not found.",
-    });
-  }
-
-  const legacyRequest = db.prepare(`
+  const request = db.prepare(`
     SELECT *
     FROM friend_requests
     WHERE id = ?
@@ -1580,19 +918,19 @@ app.delete("/api/friends/requests/:requestId", (req, res) => {
     status: FriendRequestStatus;
   } | undefined;
 
-  if (!legacyRequest) {
+  if (!request) {
     return res.status(404).json({
       error: "Friend request not found.",
     });
   }
 
-  if (legacyRequest.sender_student_id !== currentUser.id) {
+  if (request.sender_student_id !== currentUser.id) {
     return res.status(403).json({
       error: "You cannot cancel this request.",
     });
   }
 
-  if (legacyRequest.status !== "pending") {
+  if (request.status !== "pending") {
     return res.status(409).json({
       error: "This request is no longer pending.",
     });
@@ -1609,6 +947,7 @@ app.delete("/api/friends/requests/:requestId", (req, res) => {
     message: "Friend request cancelled.",
   });
 });
+
 // =======================================
 // COMMUNITY CATALOG
 // Public descriptions; private counts only for members/admins.

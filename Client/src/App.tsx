@@ -329,19 +329,14 @@ const isOwnProfile =
   // NEXCONN CONNECTION
   // ---------------------------------------
 
-
   useEffect(() => {
     let active = true;
 
-    const params = new URLSearchParams(window.location.search);
-    const judgeUsername = params.get("judge");
-    const demoUserId = params.get("user") || "demo-user";
+    const demoUserId =
+      new URLSearchParams(window.location.search).get("user") ||
+      "demo-user";
 
-    const connect = judgeUsername
-      ? connectNexconn(judgeUsername, "judge")
-      : connectNexconn(demoUserId, "student");
-
-    connect
+    connectNexconn(demoUserId)
       .then((userId) => {
         if (active) {
           console.log("[CampusWide] Nexconn connected as:", userId);
@@ -362,7 +357,6 @@ const isOwnProfile =
       active = false;
     };
   }, []);
-
 
   // ---------------------------------------
   // LOAD AND SYNCHRONIZE FRIEND DATA

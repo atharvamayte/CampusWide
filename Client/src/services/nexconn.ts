@@ -54,10 +54,8 @@ function initializeNexconn() {
   initialized = true;
 }
 
-
 export async function connectNexconn(
-  identifier: string,
-  mode: "student" | "judge" = "student"
+  demoUserId: string
 ): Promise<string> {
   if (connectionPromise) {
     return connectionPromise;
@@ -72,24 +70,14 @@ export async function connectNexconn(
   }
 
   const connectionTask = (async () => {
-    const isJudge = mode === "judge";
-
-    const endpoint = isJudge
-      ? "/api/demo/session"
-      : "/api/chat/token";
-
-    const body = isJudge
-      ? { username: identifier }
-      : { demoUserId: identifier };
-
     const response = await fetch(
-      `${apiUrl.replace(/\/+$/, "")}${endpoint}`,
+      `${apiUrl.replace(/\/+$/, "")}/api/chat/token`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify({ demoUserId })
       }
     );
 
@@ -101,32 +89,32 @@ export async function connectNexconn(
       );
     }
 
-    const result = await NCEngine.connect({
-      token: tokenData.token
-    });
+   const result = await NCEngine.connect({
+  token: tokenData.token
+});
 
-    console.log("[Nexconn] Connect response:", {
-      code: result.code,
-      hasData: Boolean(result.data),
-      userId: result.data?.userId
-    });
+console.log("[Nexconn] Connect response:", {
+  code: result.code,
+  hasData: Boolean(result.data),
+  userId: result.data?.userId
+});
 
-    if (result.code !== 0) {
-      throw new Error(
-        `Nexconn connection failed. Code: ${result.code}`
-      );
-    }
+if (result.code !== 0) {
+  throw new Error(
+    `Nexconn connection failed. Code: ${result.code}`
+  );
+}
 
-    const connectedUserId =
-      result.data?.userId || tokenData.userId;
+const connectedUserId =
+  result.data?.userId || tokenData.userId;
 
-    if (!connectedUserId) {
-      throw new Error(
-        "Nexconn connected but did not return a user ID."
-      );
-    }
+if (!connectedUserId) {
+  throw new Error(
+    "Nexconn connected but did not return a user ID."
+  );
+}
 
-    return connectedUserId;
+return connectedUserId;
   })();
 
   connectionPromise = connectionTask;
@@ -138,4 +126,3 @@ export async function connectNexconn(
     throw error;
   }
 }
-
